@@ -176,6 +176,27 @@ exports.getDocument = async (req, res) => {
   }
 };
 
+exports.getDocumentFile = async (req, res) => {
+  try {
+    const doc = await Document.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!doc) return res.status(404).json({ message: 'Document not found' });
+
+    const fileCandidates = [doc.filePath, doc.signedFilePath].filter(Boolean);
+    const existingPath = fileCandidates.find((fp) => fs.existsSync(fp));
+
+    if (!existingPath) {
+      return res.status(404).json({
+        message: 'Document file is not available on server storage. Please re-upload this document.',
+      });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.sendFile(path.resolve(existingPath));
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 exports.updateSignatureFields = async (req, res) => {
   try {
     const { fields } = req.body;

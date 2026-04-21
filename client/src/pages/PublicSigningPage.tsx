@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import api, { resolveUploadsUrlFromFilePath } from '../services/api';
+import api from '../services/api';
 import { AIAnalysis, Document, SignatureField } from '../types';
 import AIAnalysisPanel from '../components/ai/AIAnalysisPanel';
 import SignatureModal from '../components/signature/SignatureModal';
@@ -200,25 +200,14 @@ export default function PublicSigningPage() {
   const renderPDF = useCallback(async (doc: Document) => {
     if (!window.pdfjsLib || !canvasRef.current) return;
     try {
-      const sourcePath = doc.signedFilePath || doc.filePath;
-      
-      // Validate file path exists
-      if (!sourcePath) {
-        console.error('❌ No file path found in document:', doc);
-        toast.error('Document file not found. Please contact support.');
+      if (!token) {
+        toast.error('Invalid signing link');
         return;
       }
 
-      // Safely construct URL
-      const url = resolveUploadsUrlFromFilePath(sourcePath);
-      if (!url) {
-        console.error('❌ Invalid file path format:', sourcePath);
-        toast.error('Invalid document file path format.');
-        return;
-      }
-      console.log(`📄 Loading PDF from: ${url}`);
-      
-      pdfDocRef.current = await window.pdfjsLib.getDocument(url).promise;
+      const { data } = await api.get(`/public/sign/${token}/file`, { responseType: 'arraybuffer' });
+      const pdfBytes = new Uint8Array(data);
+      pdfDocRef.current = await window.pdfjsLib.getDocument({ data: pdfBytes }).promise;
       const page = await pdfDocRef.current.getPage(currentPage);
       const viewport = page.getViewport({ scale: 1.2 });
       const canvas = canvasRef.current;
@@ -227,12 +216,13 @@ export default function PublicSigningPage() {
       canvas.height = viewport.height;
       await page.render({ canvasContext: ctx, viewport }).promise;
       setPdfLoaded(true);
-      console.log(`✅ PDF loaded successfully from: ${url}`);
+      console.log('✅ PDF loaded successfully from API file endpoint');
     } catch (e: any) { 
       console.error('❌ PDF render error:', e);
-      toast.error(`Failed to load PDF: ${e?.message || 'Unknown error'}`);
+      const backendMessage = e?.response?.data?.message;
+      toast.error(backendMessage || `Failed to load PDF: ${e?.message || 'Unknown error'}`);
     }
-  }, [currentPage]);
+  }, [currentPage, token]);
 
   useEffect(() => {
     if (document && state === 'signing') {

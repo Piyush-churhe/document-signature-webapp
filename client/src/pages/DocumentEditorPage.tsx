@@ -6,7 +6,7 @@ import { SignatureData } from '../types';
 import Navbar from '../components/ui/Navbar';
 import SignatureModal from '../components/signature/SignatureModal';
 import toast from 'react-hot-toast';
-import api, { resolveUploadsUrlFromFilePath } from '../services/api';
+import api from '../services/api';
 import { ArrowLeft, Plus, Pen, Stamp, Type, Trash2, Send, Save, ZoomIn, ZoomOut, UserRound, CalendarDays, AlignLeft } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '../context/AuthContext';
@@ -81,36 +81,24 @@ export default function DocumentEditorPage() {
   }, [zoom]);
 
   useEffect(() => {
-    if (!document?.filePath || !window.pdfjsLib) return;
+    if (!document || !window.pdfjsLib || !id) return;
     const timer = setTimeout(async () => {
       try {
-        // Validate and safely construct file URL
-        if (!document.filePath) {
-          console.error('❌ No file path in document');
-          toast.error('Document file path is missing.');
-          return;
-        }
-
-        const url = resolveUploadsUrlFromFilePath(document.filePath);
-        if (!url) {
-          console.error('❌ Invalid file path format:', document.filePath);
-          toast.error('Invalid document file path format.');
-          return;
-        }
-        console.log(`📄 Loading PDF from: ${url}`);
-        
-        pdfDocRef.current = await window.pdfjsLib.getDocument(url).promise;
+        const { data } = await api.get(`/docs/${id}/file`, { responseType: 'arraybuffer' });
+        const pdfBytes = new Uint8Array(data);
+        pdfDocRef.current = await window.pdfjsLib.getDocument({ data: pdfBytes }).promise;
         setTotalPages(pdfDocRef.current.numPages);
         await renderPage(currentPage);
         setPdfLoaded(true);
-        console.log(`✅ PDF loaded successfully from: ${url}`);
+        console.log('✅ PDF loaded successfully from API file endpoint');
       } catch (e: any) { 
         console.error('❌ PDF load error:', e);
-        toast.error(`Failed to load PDF: ${e?.message || 'Unknown error'}`);
+        const backendMessage = e?.response?.data?.message;
+        toast.error(backendMessage || `Failed to load PDF: ${e?.message || 'Unknown error'}`);
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [document, window.pdfjsLib]);
+  }, [document, id, window.pdfjsLib]);
 
 
   useEffect(() => { if (pdfDocRef.current) renderPage(currentPage); }, [currentPage, zoom, renderPage]);

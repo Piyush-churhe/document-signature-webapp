@@ -7,6 +7,7 @@ const ctrl = require('../controllers/documentController');
 
 router.get('/', protect, ctrl.getDocuments);
 router.post('/upload', protect, uploadPDF.single('pdf'), ctrl.uploadDocument);
+router.get('/:id/file', protect, ctrl.getDocumentFile);
 router.get('/:id', protect, ctrl.getDocument);
 router.get('/:id/signers', protect, ctrl.getSigningProgress);
 router.put('/:id/fields', protect, ctrl.updateSignatureFields);

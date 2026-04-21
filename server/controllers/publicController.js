@@ -6,6 +6,7 @@ const { sendOTP, verifyOTP } = require('../services/otpService');
 const { advanceToNextSigner } = require('./documentController');
 const { createAuditLog } = require('../middleware/audit');
 const fs = require('fs');
+const path = require('path');
 
 const findDocumentByToken = async (token) => {
   return Document.findOne({
@@ -232,6 +233,28 @@ exports.getDocumentByToken = async (req, res) => {
     }
 
     res.json({ document: docObj });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getDocumentFileByToken = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const doc = await findDocumentByToken(token);
+    if (!doc) return res.status(404).json({ message: 'Document not found or link invalid' });
+
+    const fileCandidates = [doc.signedFilePath, doc.filePath].filter(Boolean);
+    const existingPath = fileCandidates.find((fp) => fs.existsSync(fp));
+
+    if (!existingPath) {
+      return res.status(404).json({
+        message: 'Document file is not available on server storage. Ask the owner to re-upload and resend signing link.',
+      });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.sendFile(path.resolve(existingPath));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
