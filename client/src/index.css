@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    @apply font-sans antialiased;
+    background: #0f0f17;
+    color: #e2e8f0;
+  }
+}
+
+@layer components {
+  .glass {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .glass-light {
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .btn-primary {
+    @apply bg-gradient-to-r from-amber-400 to-yellow-500 text-gray-900 font-semibold px-6 py-2.5 rounded-xl 
+           hover:from-amber-300 hover:to-yellow-400 transition-all duration-200 shadow-lg shadow-amber-500/20
+           active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply glass text-slate-300 font-medium px-6 py-2.5 rounded-xl hover:bg-white/10 transition-all duration-200;
+  }
+  .input-field {
+    @apply w-full glass rounded-xl px-4 py-3 text-white placeholder-slate-500 
+           border border-white/10 focus:border-amber-400/50 focus:outline-none focus:ring-2 focus:ring-amber-400/20
+           transition-all duration-200 bg-transparent;
+  }
+  .card {
+    @apply glass rounded-2xl p-6 transition-all duration-300 hover:bg-white/5;
+  }
+  .status-pending { @apply text-amber-400 bg-amber-400/10 border border-amber-400/20; }
+  .status-signed { @apply text-emerald-400 bg-emerald-400/10 border border-emerald-400/20; }
+  .status-rejected { @apply text-red-400 bg-red-400/10 border border-red-400/20; }
+  .status-expired { @apply text-slate-400 bg-slate-400/10 border border-slate-400/20; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* PDF canvas */
+.react-pdf__Page__canvas { max-width: 100% !important; height: auto !important; }
+.react-pdf__Page { position: relative; }
+
+/* Signature canvas */
+canvas.sig-canvas { touch-action: none; cursor: crosshair; }
+
+/* Animations */
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0); }
+}
+.pulse-gold { animation: pulse-gold 2s infinite; }
