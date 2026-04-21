@@ -8,6 +8,7 @@ const { createAuditLog } = require('../middleware/audit');
 const fs = require('fs');
 const path = require('path');
 const { resolveExistingUploadPath } = require('../utils/fileResolver');
+const { uploadFileToGridFS, downloadGridFSBuffer, writeGridFSFileToTemp } = require('../utils/gridfs');
 
 const findDocumentByToken = async (token) => {
   return Document.findOne({
@@ -249,6 +250,17 @@ exports.getDocumentFileByToken = async (req, res) => {
     const existingPath = fileCandidates.map(resolveExistingUploadPath).find(Boolean);
 
     if (!existingPath) {
+      const storageCandidates = [doc.signedFileStorageId, doc.fileStorageId].filter(Boolean);
+      for (const fileId of storageCandidates) {
+        try {
+          const pdfBuffer = await downloadGridFSBuffer(fileId);
+          res.setHeader('Content-Type', 'application/pdf');
+          return res.send(pdfBuffer);
+        } catch {
+          // Continue trying the next storage candidate.
+        }
+      }
+
       return res.status(404).json({
         message: 'Document file is not available on server storage. Ask the owner to re-upload and resend signing link.',
       });
@@ -312,6 +324,8 @@ exports.verifyOTPHandler = async (req, res) => {
 };
 
 exports.signDocumentByToken = async (req, res) => {
+  let tempSourcePdfPath = null;
+
   try {
     const { token } = req.params;
     const { signerName, signerEmail, signatures, fieldValues, action, rejectionReason } = req.body;
@@ -414,7 +428,19 @@ exports.signDocumentByToken = async (req, res) => {
     }
 
     // For sequential signing, each signer must append onto the latest signed PDF.
-    const sourcePdfPath = resolveExistingUploadPath(doc.signedFilePath || doc.filePath);
+    let sourcePdfPath = resolveExistingUploadPath(doc.signedFilePath || doc.filePath);
+    if (!sourcePdfPath) {
+      const storageSourceId = doc.signedFileStorageId || doc.fileStorageId;
+      if (storageSourceId) {
+        try {
+          tempSourcePdfPath = await writeGridFSFileToTemp(storageSourceId, '.pdf');
+          sourcePdfPath = tempSourcePdfPath;
+        } catch {
+          sourcePdfPath = null;
+        }
+      }
+    }
+
     if (!sourcePdfPath) {
       return res.status(404).json({
         message: 'Document file is not available on server storage. Ask the owner to re-upload and resend signing link.',
@@ -422,6 +448,18 @@ exports.signDocumentByToken = async (req, res) => {
     }
     const signedPath = await embedSignatureInPDF(sourcePdfPath, preparedSignatures, doc.signatureFields, preparedTextFields);
     doc.signedFilePath = signedPath;
+
+    try {
+      const signedStorageId = await uploadFileToGridFS(
+        signedPath,
+        path.basename(signedPath),
+        { documentId: String(doc._id), type: 'signed' }
+      );
+      doc.signedFileStorageId = signedStorageId;
+    } catch (storageErr) {
+      console.warn('GridFS upload warning (signed PDF):', storageErr.message);
+    }
+
     doc.signerName = actingSignerName;
     doc.signerEmail = actingSignerEmail || doc.signerEmail;
 
@@ -491,6 +529,14 @@ exports.signDocumentByToken = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  } finally {
+    if (tempSourcePdfPath && fs.existsSync(tempSourcePdfPath)) {
+      try {
+        fs.unlinkSync(tempSourcePdfPath);
+      } catch {
+        // Ignore temp file cleanup errors.
+      }
+    }
   }
 };
 
@@ -503,7 +549,19 @@ exports.downloadSignedDocument = async (req, res) => {
     const targetDoc = doc || docByToken;
     if (!targetDoc || !targetDoc.signedFilePath) return res.status(404).json({ message: 'Signed document not found' });
     const resolvedPath = resolveExistingUploadPath(targetDoc.signedFilePath);
-    if (!resolvedPath) return res.status(404).json({ message: 'File not found' });
+    if (!resolvedPath) {
+      if (targetDoc.signedFileStorageId) {
+        try {
+          const pdfBuffer = await downloadGridFSBuffer(targetDoc.signedFileStorageId);
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `attachment; filename="signed-${targetDoc.title}.pdf"`);
+          return res.send(pdfBuffer);
+        } catch {
+          return res.status(404).json({ message: 'File not found' });
+        }
+      }
+      return res.status(404).json({ message: 'File not found' });
+    }
     res.download(resolvedPath, `signed-${targetDoc.title}.pdf`);
   } catch (err) {
     res.status(500).json({ message: err.message });

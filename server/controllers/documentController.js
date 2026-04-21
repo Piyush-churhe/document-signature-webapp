@@ -6,6 +6,7 @@ const { sendSigningRequest } = require('../services/emailService');
 const path = require('path');
 const fs = require('fs');
 const { resolveExistingUploadPath } = require('../utils/fileResolver');
+const { uploadFileToGridFS, downloadGridFSBuffer } = require('../utils/gridfs');
 
 const SIGNING_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const clientAppBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
@@ -104,10 +105,23 @@ exports.uploadDocument = async (req, res) => {
     const firstSigner = uploadSigners[0] || null;
     const filePath = req.file.path;
     const pageCount = await getPDFPageCount(filePath);
+    let fileStorageId = null;
+
+    try {
+      fileStorageId = await uploadFileToGridFS(
+        filePath,
+        req.file.filename || req.file.originalname,
+        { ownerId: String(req.user._id), originalName: req.file.originalname, type: 'original' }
+      );
+    } catch (storageErr) {
+      console.warn('GridFS upload warning (original PDF):', storageErr.message);
+    }
+
     const doc = await Document.create({
       title: title || req.file.originalname.replace('.pdf', ''),
       originalName: req.file.originalname,
       filePath: req.file.path,
+      fileStorageId,
       fileSize: req.file.size,
       owner: req.user._id,
       signatureFields: [],
@@ -186,6 +200,17 @@ exports.getDocumentFile = async (req, res) => {
     const existingPath = fileCandidates.map(resolveExistingUploadPath).find(Boolean);
 
     if (!existingPath) {
+      const storageCandidates = [doc.signedFileStorageId, doc.fileStorageId].filter(Boolean);
+      for (const fileId of storageCandidates) {
+        try {
+          const pdfBuffer = await downloadGridFSBuffer(fileId);
+          res.setHeader('Content-Type', 'application/pdf');
+          return res.send(pdfBuffer);
+        } catch {
+          // Continue trying the next storage candidate.
+        }
+      }
+
       return res.status(404).json({
         message: 'Document file is not available on server storage. Please re-upload this document.',
       });
@@ -465,7 +490,26 @@ exports.downloadDocument = async (req, res) => {
     const doc = await Document.findOne({ _id: req.params.id, owner: req.user._id });
     if (!doc) return res.status(404).json({ message: 'Document not found' });
     const filePath = resolveExistingUploadPath(doc.signedFilePath || doc.filePath);
-    if (!filePath) return res.status(404).json({ message: 'File not found' });
+    if (!filePath) {
+      const storageId = doc.signedFileStorageId || doc.fileStorageId;
+      if (!storageId) return res.status(404).json({ message: 'File not found' });
+
+      try {
+        const pdfBuffer = await downloadGridFSBuffer(storageId);
+        await createAuditLog({
+          document: doc._id,
+          action: 'document_downloaded',
+          actor: req.user._id,
+          ipAddress: req.clientIP || req.ip,
+        });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${doc.title}.pdf"`);
+        return res.send(pdfBuffer);
+      } catch {
+        return res.status(404).json({ message: 'File not found' });
+      }
+    }
+
     await createAuditLog({
       document: doc._id,
       action: 'document_downloaded',
