@@ -10,14 +10,29 @@ const hexToRgb = (hex) => {
   return { r, g, b };
 };
 
+const loadPdfDocument = async (pdfBytes) => {
+  try {
+    return await PDFDocument.load(pdfBytes);
+  } catch (err) {
+    // Some real-world PDFs are encrypted with flags that pdf-lib can ignore safely.
+    if (String(err?.message || '').toLowerCase().includes('encrypted')) {
+      return PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    }
+    throw err;
+  }
+};
+
 const embedSignatureInPDF = async (documentPath, signatures, fields, textFields = []) => {
   try {
     const existingPdfBytes = fs.readFileSync(documentPath);
-    const pdfDoc = await PDFDocument.load(existingPdfBytes);
+    const pdfDoc = await loadPdfDocument(existingPdfBytes);
     const pages = pdfDoc.getPages();
+    const preparedSignatures = Array.isArray(signatures) ? signatures : [];
+    const preparedTextFields = Array.isArray(textFields) ? textFields : [];
 
-    for (const sig of signatures) {
-      for (const field of sig.fields) {
+    for (const sig of preparedSignatures) {
+      const signatureFields = Array.isArray(sig?.fields) ? sig.fields : [];
+      for (const field of signatureFields) {
         const pageIndex = (field.page || 1) - 1;
         if (pageIndex >= pages.length) continue;
         const page = pages[pageIndex];
@@ -59,7 +74,7 @@ const embedSignatureInPDF = async (documentPath, signatures, fields, textFields 
       }
     }
 
-    for (const field of textFields) {
+    for (const field of preparedTextFields) {
       const value = String(field?.value || '').trim();
       if (!value) continue;
 
@@ -88,15 +103,17 @@ const embedSignatureInPDF = async (documentPath, signatures, fields, textFields 
 
     // Add certification stamp
     const lastPage = pages[pages.length - 1];
-    const { width: lw, height: lh } = lastPage.getSize();
-    const certFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    lastPage.drawRectangle({
-      x: 40, y: 20, width: lw - 80, height: 40,
-      color: rgb(0.97, 0.97, 0.97), borderColor: rgb(0.88, 0.78, 0.49), borderWidth: 1,
-    });
-    lastPage.drawText(`Digitally signed via SignatureFlow | ${new Date().toISOString()} | Tamper-evident`, {
-      x: 50, y: 34, size: 7, font: certFont, color: rgb(0.4, 0.4, 0.4),
-    });
+    if (lastPage) {
+      const { width: lw } = lastPage.getSize();
+      const certFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      lastPage.drawRectangle({
+        x: 40, y: 20, width: lw - 80, height: 40,
+        color: rgb(0.97, 0.97, 0.97), borderColor: rgb(0.88, 0.78, 0.49), borderWidth: 1,
+      });
+      lastPage.drawText(`Digitally signed via SignatureFlow | ${new Date().toISOString()} | Tamper-evident`, {
+        x: 50, y: 34, size: 7, font: certFont, color: rgb(0.4, 0.4, 0.4),
+      });
+    }
 
     const signedPdfBytes = await pdfDoc.save();
     const outputDir = path.join(__dirname, '../uploads/signed');
@@ -113,7 +130,7 @@ const embedSignatureInPDF = async (documentPath, signatures, fields, textFields 
 const getPDFPageCount = async (filePath) => {
   try {
     const bytes = fs.readFileSync(filePath);
-    const pdf = await PDFDocument.load(bytes);
+    const pdf = await loadPdfDocument(bytes);
     return pdf.getPageCount();
   } catch {
     return 1;
