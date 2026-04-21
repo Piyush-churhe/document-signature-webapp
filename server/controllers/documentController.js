@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const { sendSigningRequest } = require('../services/emailService');
 const path = require('path');
 const fs = require('fs');
+const { resolveExistingUploadPath } = require('../utils/fileResolver');
 
 const SIGNING_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const clientAppBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
@@ -182,7 +183,7 @@ exports.getDocumentFile = async (req, res) => {
     if (!doc) return res.status(404).json({ message: 'Document not found' });
 
     const fileCandidates = [doc.filePath, doc.signedFilePath].filter(Boolean);
-    const existingPath = fileCandidates.find((fp) => fs.existsSync(fp));
+    const existingPath = fileCandidates.map(resolveExistingUploadPath).find(Boolean);
 
     if (!existingPath) {
       return res.status(404).json({
@@ -449,7 +450,8 @@ exports.deleteDocument = async (req, res) => {
     if (!doc) return res.status(404).json({ message: 'Document not found' });
     // Delete files
     [doc.filePath, doc.signedFilePath].forEach(fp => {
-      if (fp && fs.existsSync(fp)) fs.unlinkSync(fp);
+      const resolved = resolveExistingUploadPath(fp);
+      if (resolved && fs.existsSync(resolved)) fs.unlinkSync(resolved);
     });
     await doc.deleteOne();
     res.json({ message: 'Document deleted' });
@@ -462,8 +464,8 @@ exports.downloadDocument = async (req, res) => {
   try {
     const doc = await Document.findOne({ _id: req.params.id, owner: req.user._id });
     if (!doc) return res.status(404).json({ message: 'Document not found' });
-    const filePath = doc.signedFilePath || doc.filePath;
-    if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'File not found' });
+    const filePath = resolveExistingUploadPath(doc.signedFilePath || doc.filePath);
+    if (!filePath) return res.status(404).json({ message: 'File not found' });
     await createAuditLog({
       document: doc._id,
       action: 'document_downloaded',

@@ -5,6 +5,7 @@ const { createAuditLog } = require('../middleware/audit');
 const { generateSigningToken, getTokenExpiry } = require('../utils/token');
 const path = require('path');
 const fs = require('fs');
+const { resolveExistingUploadPath } = require('../utils/fileResolver');
 
 exports.saveSignature = async (req, res) => {
   try {
@@ -81,7 +82,12 @@ exports.finalizeDocument = async (req, res) => {
             required: Boolean(field.required),
           }));
 
-    const sourcePdfPath = doc.signedFilePath || doc.filePath;
+    const sourcePdfPath = resolveExistingUploadPath(doc.signedFilePath || doc.filePath);
+    if (!sourcePdfPath) {
+      return res.status(404).json({
+        message: 'Document file is not available on server storage. Please re-upload this document.',
+      });
+    }
     const signedPath = await embedSignatureInPDF(sourcePdfPath, signatures, doc.signatureFields, editableTextFields);
 
     const now = new Date();

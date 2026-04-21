@@ -7,6 +7,7 @@ const { advanceToNextSigner } = require('./documentController');
 const { createAuditLog } = require('../middleware/audit');
 const fs = require('fs');
 const path = require('path');
+const { resolveExistingUploadPath } = require('../utils/fileResolver');
 
 const findDocumentByToken = async (token) => {
   return Document.findOne({
@@ -245,7 +246,7 @@ exports.getDocumentFileByToken = async (req, res) => {
     if (!doc) return res.status(404).json({ message: 'Document not found or link invalid' });
 
     const fileCandidates = [doc.signedFilePath, doc.filePath].filter(Boolean);
-    const existingPath = fileCandidates.find((fp) => fs.existsSync(fp));
+    const existingPath = fileCandidates.map(resolveExistingUploadPath).find(Boolean);
 
     if (!existingPath) {
       return res.status(404).json({
@@ -413,7 +414,12 @@ exports.signDocumentByToken = async (req, res) => {
     }
 
     // For sequential signing, each signer must append onto the latest signed PDF.
-    const sourcePdfPath = doc.signedFilePath || doc.filePath;
+    const sourcePdfPath = resolveExistingUploadPath(doc.signedFilePath || doc.filePath);
+    if (!sourcePdfPath) {
+      return res.status(404).json({
+        message: 'Document file is not available on server storage. Ask the owner to re-upload and resend signing link.',
+      });
+    }
     const signedPath = await embedSignatureInPDF(sourcePdfPath, preparedSignatures, doc.signatureFields, preparedTextFields);
     doc.signedFilePath = signedPath;
     doc.signerName = actingSignerName;
@@ -496,8 +502,9 @@ exports.downloadSignedDocument = async (req, res) => {
     const docByToken = await Document.findOne({ _id: req.params.docId });
     const targetDoc = doc || docByToken;
     if (!targetDoc || !targetDoc.signedFilePath) return res.status(404).json({ message: 'Signed document not found' });
-    if (!fs.existsSync(targetDoc.signedFilePath)) return res.status(404).json({ message: 'File not found' });
-    res.download(targetDoc.signedFilePath, `signed-${targetDoc.title}.pdf`);
+    const resolvedPath = resolveExistingUploadPath(targetDoc.signedFilePath);
+    if (!resolvedPath) return res.status(404).json({ message: 'File not found' });
+    res.download(resolvedPath, `signed-${targetDoc.title}.pdf`);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

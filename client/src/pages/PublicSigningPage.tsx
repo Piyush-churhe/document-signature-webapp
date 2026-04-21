@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import api from '../services/api';
+import api, { resolveUploadsUrlFromFilePath } from '../services/api';
 import { AIAnalysis, Document, SignatureField } from '../types';
 import AIAnalysisPanel from '../components/ai/AIAnalysisPanel';
 import SignatureModal from '../components/signature/SignatureModal';
@@ -199,6 +199,7 @@ export default function PublicSigningPage() {
 
   const renderPDF = useCallback(async (doc: Document) => {
     if (!window.pdfjsLib || !canvasRef.current) return;
+    const sourcePath = doc.signedFilePath || doc.filePath;
     try {
       if (!token) {
         toast.error('Invalid signing link');
@@ -219,6 +220,26 @@ export default function PublicSigningPage() {
       console.log('✅ PDF loaded successfully from API file endpoint');
     } catch (e: any) { 
       console.error('❌ PDF render error:', e);
+      if (e?.response?.status === 404 && sourcePath) {
+        try {
+          const fallbackUrl = resolveUploadsUrlFromFilePath(sourcePath);
+          if (fallbackUrl) {
+            pdfDocRef.current = await window.pdfjsLib.getDocument(fallbackUrl).promise;
+            const page = await pdfDocRef.current.getPage(currentPage);
+            const viewport = page.getViewport({ scale: 1.2 });
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext('2d')!;
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            setPdfLoaded(true);
+            console.warn('Loaded PDF via uploads fallback URL');
+            return;
+          }
+        } catch (fallbackErr) {
+          console.error('❌ PDF fallback render error:', fallbackErr);
+        }
+      }
       const backendMessage = e?.response?.data?.message;
       toast.error(backendMessage || `Failed to load PDF: ${e?.message || 'Unknown error'}`);
     }

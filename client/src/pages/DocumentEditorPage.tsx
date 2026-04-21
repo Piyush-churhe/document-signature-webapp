@@ -6,7 +6,7 @@ import { SignatureData } from '../types';
 import Navbar from '../components/ui/Navbar';
 import SignatureModal from '../components/signature/SignatureModal';
 import toast from 'react-hot-toast';
-import api from '../services/api';
+import api, { resolveUploadsUrlFromFilePath } from '../services/api';
 import { ArrowLeft, Plus, Pen, Stamp, Type, Trash2, Send, Save, ZoomIn, ZoomOut, UserRound, CalendarDays, AlignLeft } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '../context/AuthContext';
@@ -93,6 +93,21 @@ export default function DocumentEditorPage() {
         console.log('✅ PDF loaded successfully from API file endpoint');
       } catch (e: any) { 
         console.error('❌ PDF load error:', e);
+        if (e?.response?.status === 404 && document?.filePath) {
+          try {
+            const fallbackUrl = resolveUploadsUrlFromFilePath(document.filePath);
+            if (fallbackUrl) {
+              pdfDocRef.current = await window.pdfjsLib.getDocument(fallbackUrl).promise;
+              setTotalPages(pdfDocRef.current.numPages);
+              await renderPage(currentPage);
+              setPdfLoaded(true);
+              console.warn('Loaded PDF via uploads fallback URL');
+              return;
+            }
+          } catch (fallbackErr) {
+            console.error('❌ PDF fallback load error:', fallbackErr);
+          }
+        }
         const backendMessage = e?.response?.data?.message;
         toast.error(backendMessage || `Failed to load PDF: ${e?.message || 'Unknown error'}`);
       }
