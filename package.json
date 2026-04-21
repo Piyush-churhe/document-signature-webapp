@@ -1,0 +1,14 @@
+{
+  "name": "signatureflow",
+  "version": "1.0.0",
+  "description": "SignatureFlow – Enterprise Document Signature SaaS (MERN Stack)",
+  "scripts": {
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
