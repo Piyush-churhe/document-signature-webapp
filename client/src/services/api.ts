@@ -4,6 +4,25 @@ const normalizeApiBaseUrl = (url?: string) => (url || '').replace(/\/$/, '');
 const envApiBaseUrl = normalizeApiBaseUrl((import.meta as any).env?.VITE_API_URL);
 const apiBaseURL = envApiBaseUrl || '/api';
 
+const getApiOrigin = () => {
+  if (!apiBaseURL || apiBaseURL.startsWith('/')) {
+    return window.location.origin;
+  }
+  try {
+    return new URL(apiBaseURL).origin;
+  } catch {
+    return window.location.origin;
+  }
+};
+
+export const resolveUploadsUrlFromFilePath = (sourcePath: string) => {
+  const uploadsMatch = sourcePath.match(/[\\/]uploads[\\/](.+)$/);
+  if (!uploadsMatch) return null;
+
+  const normalizedRelativePath = uploadsMatch[1].replace(/\\/g, '/');
+  return `${getApiOrigin()}/uploads/${normalizedRelativePath}`;
+};
+
 const api = axios.create({
   baseURL: apiBaseURL,
   timeout: 30000,

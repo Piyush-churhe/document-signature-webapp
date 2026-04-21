@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import api from '../services/api';
+import api, { resolveUploadsUrlFromFilePath } from '../services/api';
 import { AIAnalysis, Document, SignatureField } from '../types';
 import AIAnalysisPanel from '../components/ai/AIAnalysisPanel';
 import SignatureModal from '../components/signature/SignatureModal';
@@ -210,15 +210,12 @@ export default function PublicSigningPage() {
       }
 
       // Safely construct URL
-      const uploadsMatch = sourcePath.match(/[\\/]uploads[\\/](.+)$/);
-      if (!uploadsMatch) {
+      const url = resolveUploadsUrlFromFilePath(sourcePath);
+      if (!url) {
         console.error('❌ Invalid file path format:', sourcePath);
         toast.error('Invalid document file path format.');
         return;
       }
-
-      const normalizedRelativePath = uploadsMatch[1].replace(/\\/g, '/');
-      const url = `/uploads/${normalizedRelativePath}`;
       console.log(`📄 Loading PDF from: ${url}`);
       
       pdfDocRef.current = await window.pdfjsLib.getDocument(url).promise;

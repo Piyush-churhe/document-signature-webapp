@@ -6,7 +6,7 @@ import { SignatureData } from '../types';
 import Navbar from '../components/ui/Navbar';
 import SignatureModal from '../components/signature/SignatureModal';
 import toast from 'react-hot-toast';
-import api from '../services/api';
+import api, { resolveUploadsUrlFromFilePath } from '../services/api';
 import { ArrowLeft, Plus, Pen, Stamp, Type, Trash2, Send, Save, ZoomIn, ZoomOut, UserRound, CalendarDays, AlignLeft } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '../context/AuthContext';
@@ -91,15 +91,12 @@ export default function DocumentEditorPage() {
           return;
         }
 
-        const uploadsMatch = document.filePath.match(/[\\/]uploads[\\/](.+)$/);
-        if (!uploadsMatch) {
+        const url = resolveUploadsUrlFromFilePath(document.filePath);
+        if (!url) {
           console.error('❌ Invalid file path format:', document.filePath);
           toast.error('Invalid document file path format.');
           return;
         }
-
-        const normalizedRelativePath = uploadsMatch[1].replace(/\\/g, '/');
-        const url = `/uploads/${normalizedRelativePath}`;
         console.log(`📄 Loading PDF from: ${url}`);
         
         pdfDocRef.current = await window.pdfjsLib.getDocument(url).promise;
